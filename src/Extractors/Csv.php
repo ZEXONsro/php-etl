@@ -2,6 +2,8 @@
 
 namespace Marquine\Etl\Extractors;
 
+use Marquine\Etl\Row;
+
 class Csv extends Extractor
 {
     /**
@@ -9,40 +11,44 @@ class Csv extends Extractor
      *
      * @var array
      */
-    public $columns;
+    protected $columns;
 
     /**
      * The delimiter string.
      *
      * @var string
      */
-    public $delimiter = ',';
+    protected $delimiter = ',';
 
     /**
      * The enclosure string.
      *
      * @var string
      */
-    public $enclosure = '';
+    protected $enclosure = '';
 
     /**
-     * Extract data from the given source.
+     * Properties that can be set via the options method.
      *
-     * @param  string  $source
+     * @var array
+     */
+    protected $availableOptions = [
+        'columns', 'delimiter', 'enclosure'
+    ];
+
+    /**
+     * Extract data from the input.
+     *
      * @return \Generator
      */
-    public function extract($source)
+    public function extract()
     {
-        $source = $this->validateSourceFile($source);
+        $handle = fopen($this->input, 'r');
 
-        $handle = fopen($source, 'r');
+        $columns = $this->makeColumns($handle);
 
         while ($row = fgets($handle)) {
-            if (! $this->columns) {
-                $this->columns = $this->makeColumns($row);
-            } else {
-                yield $this->makeRow($row);
-            }
+            yield new Row($this->makeRow($row, $columns));
         }
 
         fclose($handle);
@@ -52,15 +58,16 @@ class Csv extends Extractor
      * Converts the row string to array.
      *
      * @param  string  $row
+     * @param  array  $columns
      * @return array
      */
-    protected function makeRow($row)
+    protected function makeRow($row, $columns)
     {
         $row = str_getcsv($row, $this->delimiter, $this->enclosure);
 
         $data = [];
 
-        foreach ($this->columns as $column => $index) {
+        foreach ($columns as $column => $index) {
             $data[$column] = $row[$index - 1];
         }
 
@@ -70,17 +77,35 @@ class Csv extends Extractor
     /**
      * Make columns based on csv header.
      *
-     * @param  string  $header
+     * @param  array  $handle
      * @return array
      */
-    protected function makeColumns($header)
+    protected function makeColumns($handle)
     {
-        $columns = array_flip(str_getcsv($header, $this->delimiter, $this->enclosure));
+        if (is_array($this->columns) && is_numeric(current($this->columns))) {
+            return $this->columns;
+        }
+
+        $columns = array_flip(str_getcsv(fgets($handle), $this->delimiter, $this->enclosure));
 
         foreach ($columns as $key => $index) {
             $columns[$key] = $index + 1;
         }
 
-        return $columns;
+        if (empty($this->columns)) {
+            return $columns;
+        }
+
+        if (array_keys($this->columns) === range(0, count($this->columns) - 1)) {
+           return array_intersect_key($columns, array_flip($this->columns));
+        }
+
+        $result = [];
+
+        foreach ($this->columns as $key => $value) {
+            $result[$value] = $columns[$key];
+        }
+
+        return $result;
     }
 }

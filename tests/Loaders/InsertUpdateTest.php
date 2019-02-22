@@ -4,91 +4,229 @@ namespace Tests\Loaders;
 
 use Tests\TestCase;
 use Marquine\Etl\Loaders\InsertUpdate;
-use Marquine\Etl\Database\Manager as DB;
 
 class InsertUpdateTest extends TestCase
 {
-    /** @test */
-    public function insert_and_update_data()
+    protected function setUp()
     {
-        $this->createUsersTable('default');
+        parent::setUp();
 
-        DB::connection('default')->exec("insert into users values (1, 'Jane', 'janedoe@example.com')");
+        $this->transaction = $this->createMock('Marquine\Etl\Database\Transaction');
+        $this->transaction->expects($this->any())->method('size')->willReturnSelf();
+        $this->transaction->expects($this->any())->method('run')->willReturnCallback(function ($callback) { call_user_func($callback); });
+        $this->transaction->expects($this->any())->method('close');
 
-        $data = function () {
-            yield ['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com'];
-            yield ['id' => '2', 'name' => 'John Doe', 'email' => 'johndoe@example.com'];
-        };
+        $this->insert = $this->createMock('PDOStatement');
+        $this->insert->expects($this->any())->method('execute');
 
-        $loader = new InsertUpdate;
+        $this->insertStatement = $this->createMock('Marquine\Etl\Database\Statement');
+        $this->insertStatement->expects($this->any())->method('insert')->willReturnSelf();
+        $this->insertStatement->expects($this->any())->method('prepare')->willReturn($this->insert);
 
-        $loader->load($data(), 'users');
+        $this->select = $this->createMock('PDOStatement');
+        $this->select->expects($this->any())->method('execute');
 
-        $expected = [
-            ['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com'],
-            ['id' => '2', 'name' => 'John Doe', 'email' => 'johndoe@example.com'],
-        ];
+        $this->selectStatement = $this->createMock('Marquine\Etl\Database\Statement');
+        $this->selectStatement->expects($this->any())->method('select')->willReturnSelf();
+        $this->selectStatement->expects($this->any())->method('where')->willReturnSelf();
+        $this->selectStatement->expects($this->any())->method('prepare')->willReturn($this->select);
 
-        $query = DB::connection('default')->query('select * from users');
+        $this->update = $this->createMock('PDOStatement');
+        $this->update->expects($this->any())->method('execute');
 
-        $this->assertEquals($expected, $query->fetchAll());
+        $this->updateStatement = $this->createMock('Marquine\Etl\Database\Statement');
+        $this->updateStatement->expects($this->any())->method('update')->willReturnSelf();
+        $this->updateStatement->expects($this->any())->method('where')->willReturnSelf();
+        $this->updateStatement->expects($this->any())->method('prepare')->willReturn($this->update);
+
+        $this->statement = $this->createMock('Marquine\Etl\Database\Statement');
+        $this->statement->expects($this->any())->method('insert')->willReturn($this->insertStatement);
+        $this->statement->expects($this->any())->method('select')->willReturn($this->selectStatement);
+        $this->statement->expects($this->any())->method('update')->willReturn($this->updateStatement);
+
+        $this->manager = $this->createMock('Marquine\Etl\Database\Manager');
+        $this->manager->expects($this->any())->method('statement')->willReturn($this->statement);
+        $this->manager->expects($this->any())->method('transaction')->willReturn($this->transaction);
+
+        $this->row = $this->createMock('Marquine\Etl\Row');
+        $this->row->expects($this->any())->method('toArray')->willReturn(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com']);
+
+        $this->loader = new InsertUpdate($this->manager);
+        $this->loader->output('table');
     }
 
     /** @test */
-    public function insert_and_update_specified_columns()
+    public function insert_row_if_it_was_not_found_in_the_database()
     {
-        $this->createUsersTable('default');
+        $this->statement->expects($this->once())->method('select')->with('table');
+        $this->selectStatement->expects($this->once())->method('where')->with(['id']);
+        $this->selectStatement->expects($this->once())->method('prepare');
+        $this->select->expects($this->once())->method('execute')->with(['id' => '1']);
+        $this->select->expects($this->once())->method('fetch')->willReturn(false);
 
-        DB::connection('default')->exec("insert into users values (1, 'Jane', 'oldemail@example.com')");
+        $this->statement->expects($this->once())->method('insert')->with('table', ['id', 'name', 'email']);
+        $this->insertStatement->expects($this->once())->method('prepare');
+        $this->insert->expects($this->once())->method('execute')->with(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com']);
 
-        $data = function () {
-            yield ['id' => '1', 'name' => 'Jane Doe', 'email' => 'newemail@example.com'];
-            yield ['id' => '2', 'name' => 'John Doe', 'email' => 'johndoe@example.com'];
-        };
+        $this->update->expects($this->never())->method('execute');
 
-        $loader = new InsertUpdate;
+        $this->transaction->expects($this->once())->method('size')->with(100);
+        $this->transaction->expects($this->once())->method('run');
+        $this->transaction->expects($this->once())->method('close');
 
-        $loader->columns = ['id', 'name'];
-
-        $loader->load($data(), 'users');
-
-        $expected = [
-            ['id' => '1', 'name' => 'Jane Doe', 'email' => 'oldemail@example.com'],
-            ['id' => '2', 'name' => 'John Doe', 'email' => ''],
-        ];
-
-        $query = DB::connection('default')->query('select * from users');
-
-        $this->assertEquals($expected, $query->fetchAll());
+        $this->execute($this->loader, [$this->row]);
     }
 
     /** @test */
-    public function insert_and_update_data_with_timestamps()
+    public function update_row_if_it_was_found_in_the_database()
     {
-        $this->createUsersTable('default', true);
+        $this->statement->expects($this->once())->method('select')->with('table');
+        $this->selectStatement->expects($this->once())->method('where')->with(['id']);
+        $this->selectStatement->expects($this->once())->method('prepare');
+        $this->select->expects($this->once())->method('execute')->with(['id' => '1']);
+        $this->select->expects($this->once())->method('fetch')->willReturn(['name' => 'Jane']);
 
-        $timestamp = '2005-03-24 15:00:00';
+        $this->statement->expects($this->once())->method('update')->with('table', ['name', 'email']);
+        $this->updateStatement->expects($this->once())->method('where')->with(['id']);
+        $this->updateStatement->expects($this->once())->method('prepare');
+        $this->update->expects($this->once())->method('execute')->with(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com']);
 
-        DB::connection('default')->exec("insert into users values (1, 'Jane', 'jane@example.com', '$timestamp', '$timestamp', null)");
+        $this->insert->expects($this->never())->method('execute');
 
-        $data = function () {
-            yield ['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com'];
-            yield ['id' => '2', 'name' => 'John Doe', 'email' => 'johndoe@example.com'];
-        };
+        $this->transaction->expects($this->once())->method('size')->with(100);
+        $this->transaction->expects($this->once())->method('run');
+        $this->transaction->expects($this->once())->method('close');
 
-        $loader = new InsertUpdate;
+        $this->execute($this->loader, [$this->row]);
+    }
 
-        $loader->timestamps = true;
+    /** @test */
+    public function do_not_update_if_there_are_no_changes()
+    {
+        $this->statement->expects($this->once())->method('select')->with('table');
+        $this->selectStatement->expects($this->once())->method('where')->with(['id']);
+        $this->selectStatement->expects($this->once())->method('prepare');
+        $this->select->expects($this->once())->method('execute')->with(['id' => '1']);
+        $this->select->expects($this->once())->method('fetch')->willReturn(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com', 'created_at' => date('Y-m-d G:i:s'), 'updated_at' => date('Y-m-d G:i:s')]);
 
-        $loader->load($data(), 'users');
+        $this->statement->expects($this->once())->method('update')->with('table', ['name', 'email']);
+        $this->updateStatement->expects($this->once())->method('where')->with(['id']);
+        $this->updateStatement->expects($this->once())->method('prepare');
+        $this->update->expects($this->never())->method('execute');
 
-        $expected = [
-            ['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com', 'created_at' => '2005-03-24 15:00:00', 'updated_at' => date('Y-m-d G:i:s'), 'deleted_at' => null],
-            ['id' => '2', 'name' => 'John Doe', 'email' => 'johndoe@example.com', 'created_at' => date('Y-m-d G:i:s'), 'updated_at' => date('Y-m-d G:i:s'), 'deleted_at' => null],
-        ];
+        $this->insert->expects($this->never())->method('execute');
 
-        $query = DB::connection('default')->query('select * from users');
+        $this->transaction->expects($this->once())->method('size')->with(100);
+        $this->transaction->expects($this->once())->method('run');
 
-        $this->assertEquals($expected, $query->fetchAll());
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function filtering_columns_to_insert()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(false);
+
+        $this->statement->expects($this->once())->method('insert')->with('table', ['id', 'name']);
+        $this->insert->expects($this->once())->method('execute')->with(['id' => '1', 'name' => 'Jane Doe']);
+
+        $this->loader->options(['columns' => ['id', 'name']]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function filtering_columns_to_update()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(['name' => 'Jane']);
+
+        $this->statement->expects($this->once())->method('update')->with('table', ['name']);
+        $this->update->expects($this->once())->method('execute')->with(['id' => '1',  'name' => 'Jane Doe']);
+
+        $this->loader->options(['columns' => ['id', 'name']]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function mapping_columns_to_insert()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(false);
+
+        $this->statement->expects($this->once())->method('insert')->with('table', ['user_id', 'full_name']);
+        $this->insert->expects($this->once())->method('execute')->with(['user_id' => '1', 'full_name' => 'Jane Doe']);
+
+        $this->loader->options(['columns' => ['id' => 'user_id', 'name' => 'full_name']]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function mapping_columns_to_update()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(['name' => 'Jane']);
+
+        $this->statement->expects($this->once())->method('update')->with('table', ['full_name']);
+        $this->update->expects($this->once())->method('execute')->with(['id' => '1', 'full_name' => 'Jane Doe']);
+
+        $this->loader->options(['columns' => ['id' => 'id', 'name' => 'full_name']]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function insert_data_using_timestamps()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(false);
+
+        $this->statement->expects($this->once())->method('insert')->with('table', ['id', 'name', 'email', 'created_at', 'updated_at']);
+        $this->insert->expects($this->once())->method('execute')->with(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com', 'created_at' => date('Y-m-d G:i:s'), 'updated_at' => date('Y-m-d G:i:s')]);
+
+        $this->loader->options(['timestamps' => true]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function update_data_using_timestamps()
+    {
+        $this->select->expects($this->once())->method('fetch')->willReturn(['name' => 'Jane']);
+
+        $this->statement->expects($this->once())->method('update')->with('table', ['name', 'email', 'updated_at']);
+        $this->update->expects($this->once())->method('execute')->with(['id' => '1', 'name' => 'Jane Doe', 'email' => 'janedoe@example.com', 'updated_at' => date('Y-m-d G:i:s')]);
+
+        $this->loader->options(['timestamps' => true]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function insert_data_into_the_database_without_transactions()
+    {
+        $this->transaction->expects($this->never())->method('size');
+        $this->transaction->expects($this->never())->method('run');
+        $this->manager->expects($this->never())->method('transaction');
+
+        $this->select->expects($this->once())->method('fetch')->willReturn(false);
+        $this->insert->expects($this->once())->method('execute');
+
+        $this->loader->options(['transaction' => false]);
+
+        $this->execute($this->loader, [$this->row]);
+    }
+
+    /** @test */
+    public function update_data_into_the_database_without_transactions()
+    {
+        $this->transaction->expects($this->never())->method('size');
+        $this->transaction->expects($this->never())->method('run');
+        $this->manager->expects($this->never())->method('transaction');
+
+        $this->select->expects($this->once())->method('fetch')->willReturn(['name' => 'Jane']);
+        $this->update->expects($this->once())->method('execute');
+
+        $this->loader->options(['transaction' => false]);
+
+        $this->execute($this->loader, [$this->row]);
     }
 }

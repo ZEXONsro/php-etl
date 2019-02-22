@@ -2,16 +2,36 @@
 
 namespace Marquine\Etl\Loaders;
 
-use Generator;
+use Marquine\Etl\Row;
+use Marquine\Etl\Step;
 
-abstract class Loader
+abstract class Loader extends Step
 {
     /**
-     * Load data into the given destination.
+     * The loader output.
      *
-     * @param  \Generator  $data
-     * @param  string  $destination
+     * @var mixed
+     */
+    protected $output;
+
+    /**
+     * Set the loader output.
+     *
+     * @param  mixed  $output
+     * @return $this
+     */
+    public function output($output)
+    {
+        $this->output = $output;
+
+        return $this;
+    }
+
+    /**
+     * Load the given row.
+     *
+     * @param  \Marquine\Etl\Row  $row
      * @return void
      */
-    abstract public function load(Generator $data, $destination);
+    abstract public function load(Row $row);
 }

@@ -3,28 +3,24 @@
 namespace Tests\Extractors;
 
 use Tests\TestCase;
+use Marquine\Etl\Row;
 use Marquine\Etl\Extractors\FixedWidth;
 
 class FixedWidthTest extends TestCase
 {
-    private $expected = [
-        ['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com'],
-        ['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com'],
-    ];
-
     /** @test */
-    public function extracts_data_from_a_fixed_width_text_file()
+    public function columns_start_and_length()
     {
-        $extractor = new FixedWidth;
-
-        $extractor->columns = [
-            'id' => [0, 1],
-            'name' => [1, 8],
-            'email' => [9, 17],
+        $expected = [
+            new Row(['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
         ];
 
-        $results = $extractor->extract('fixed-width.txt');
+        $extractor = new FixedWidth;
 
-        $this->assertEquals($this->expected, iterator_to_array($results));
+        $extractor->input(__DIR__.'/../data/fixed-width.txt');
+        $extractor->options(['columns' => ['id' => [0, 1], 'name' => [1, 8], 'email' => [9, 17]]]);
+
+        $this->assertEquals($expected, iterator_to_array($extractor->extract()));
     }
 }

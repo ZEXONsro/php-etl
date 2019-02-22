@@ -2,118 +2,86 @@
 
 namespace Tests\Database;
 
-use Mockery;
 use Exception;
 use Tests\TestCase;
-use InvalidArgumentException;
-use Marquine\Etl\Database\Connection;
 use Marquine\Etl\Database\Transaction;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
 class TransactionTest extends TestCase
 {
-    use MockeryPHPUnitIntegration;
-
-    protected $pdo;
-
-    protected $transaction;
-
     protected function setUp()
     {
         parent::setUp();
 
-        $this->connection = Mockery::mock(Connection::class);
+        $this->connection = $this->createMock('PDO');
+        $this->callback = $this->getMockBuilder('stdClass')->setMethods(['callback'])->getMock();
+
         $this->transaction = new Transaction($this->connection);
     }
 
-    /** @test */
-    public function no_transaction()
+    protected function transaction($range)
     {
-        $data = range(1, 20);
-        $mode = 'none';
-        $callback = function ($row) {
-            return $row;
-        };
+        foreach ($range as $current) {
+            $this->transaction->run([$this->callback, 'callback']);
+        }
 
-        $this->connection->shouldNotReceive('beginTransaction');
-        $this->connection->shouldNotReceive('commit');
-        $this->connection->shouldNotReceive('rollBack');
-
-        $this->assertEquals($data, $this->transaction->mode($mode)->data($data)->run($callback));
+        $this->transaction->close();
     }
 
     /** @test */
-    public function single_transaction()
+    public function runs_a_single_transaction_if_size_is_empty()
     {
-        $data = range(1, 20);
-        $mode = 'single';
-        $callback = function ($row) {
-            return $row;
-        };
+        $this->callback->expects($this->exactly(4))->method('callback');
 
-        $this->connection->shouldReceive('beginTransaction')->once();
-        $this->connection->shouldReceive('commit')->once();
+        $this->connection->expects($this->exactly(1))->method('beginTransaction');
+        $this->connection->expects($this->exactly(0))->method('rollBack');
+        $this->connection->expects($this->exactly(1))->method('commit');
 
-        $this->assertEquals($data, $this->transaction->mode($mode)->data($data)->run($callback));
+        $this->transaction(range(1, 4));
     }
 
     /** @test */
-    public function transaction_size_is_multiple_of_data_size()
+    public function runs_transactions_when_commit_size_is_multiple_of_total_lines()
     {
-        $data = range(1, 20);
-        $mode = 10;
-        $callback = function ($row) {
-            return $row;
-        };
+        $this->callback->expects($this->exactly(4))->method('callback');
 
-        $this->connection->shouldReceive('beginTransaction')->times(2);
-        $this->connection->shouldReceive('commit')->times(2);
+        $this->connection->expects($this->exactly(2))->method('beginTransaction');
+        $this->connection->expects($this->exactly(0))->method('rollBack');
+        $this->connection->expects($this->exactly(2))->method('commit');
 
-        $this->assertEquals($data, $this->transaction->mode($mode)->data($data)->run($callback));
+        $this->transaction->size(2);
+
+        $this->transaction(range(1, 4));
     }
 
     /** @test */
-    public function transaction_size_is_not_multiple_of_data_size()
+    public function runs_transactions_when_commit_size_is_not_multiple_of_total_lines()
     {
-        $data = range(1, 17);
-        $mode = 10;
-        $callback = function ($row) {
-            return $row;
-        };
+        $this->callback->expects($this->exactly(3))->method('callback');
 
-        $this->connection->shouldReceive('beginTransaction')->times(2);
-        $this->connection->shouldReceive('commit')->times(2);
+        $this->connection->expects($this->exactly(2))->method('beginTransaction');
+        $this->connection->expects($this->exactly(0))->method('rollBack');
+        $this->connection->expects($this->exactly(2))->method('commit');
 
-        $this->assertEquals($data, $this->transaction->mode($mode)->data($data)->run($callback));
+        $this->transaction->size(2);
+
+        $this->transaction(range(1, 3));
     }
 
     /** @test */
-    public function transaction_rollback_on_error()
+    public function rolls_back_the_last_transaction_and_stops_execution_on_error()
     {
-        $data = range(1, 20);
-        $mode = 10;
-        $callback = function () {
-            throw new Exception;
-        };
+        $this->callback->expects($this->exactly(3))->method('callback')->willReturnOnConsecutiveCalls(
+            null, null, $this->throwException(new Exception)
+        );
 
-        $this->connection->shouldReceive('beginTransaction')->times(1);
-        $this->connection->shouldReceive('rollBack')->times(1);
+        $this->connection->expects($this->exactly(2))->method('beginTransaction');
+        $this->connection->expects($this->exactly(1))->method('rollBack');
+        $this->connection->expects($this->exactly(1))->method('commit');
 
-        $this->expectException(Exception::class);
+        $this->transaction->size(2);
 
-        $this->transaction->mode($mode)->data($data)->run($callback);
-    }
+        $this->expectException('Exception');
 
-    /** @test */
-    public function invalid_transaction_mode_throws_an_exception()
-    {
-        $data = range(1, 20);
-        $mode = 'invalid';
-        $callback = function () {
-        };
-
-        $this->expectException(InvalidArgumentException::class);
-
-        $this->transaction->mode($mode)->data($data)->run($callback);
+        $this->transaction(range(1, 4));
     }
 }

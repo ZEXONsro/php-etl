@@ -2,6 +2,8 @@
 
 namespace Marquine\Etl\Transformers;
 
+use Marquine\Etl\Row;
+
 class JsonEncode extends Transformer
 {
     /**
@@ -9,41 +11,41 @@ class JsonEncode extends Transformer
      *
      * @var array
      */
-    public $columns;
+    protected $columns = [];
 
     /**
      * Options.
      *
      * @var int
      */
-    public $options = 0;
+    protected $options = 0;
 
     /**
      * Maximum depth.
      *
      * @var string
      */
-    public $depth = 512;
+    protected $depth = 512;
 
     /**
-     * Get the transformer handler.
+     * Properties that can be set via the options method.
      *
-     * @return callable
+     * @var array
      */
-    public function handler()
-    {
-        return function ($row) {
-            if ($this->columns) {
-                foreach ($this->columns as $column) {
-                    $row[$column] = json_encode($row[$column], $this->options, $this->depth);
-                }
-            } else {
-                foreach ($row as $column => $value) {
-                    $row[$column] = json_encode($value, $this->options, $this->depth);
-                }
-            }
+    protected $availableOptions = [
+        'columns', 'depth', 'options'
+    ];
 
-            return $row;
-        };
+    /**
+     * Transform the given row.
+     *
+     * @param  \Marquine\Etl\Row  $row
+     * @return void
+     */
+    public function transform(Row $row)
+    {
+        $row->transform($this->columns, function ($column) {
+            return json_encode($column, $this->options, $this->depth);
+        });
     }
 }

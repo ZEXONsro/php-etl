@@ -2,37 +2,28 @@
 
 namespace Tests;
 
-use Marquine\Etl\Etl;
-use Marquine\Etl\Database\Manager as DB;
+use Marquine\Etl\Loaders\Loader;
+use Marquine\Etl\Transformers\Transformer;
 use PHPUnit\Framework\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
-    protected function setUp()
+    protected function execute($step, $data)
     {
-        parent::setUp();
+        if ($step instanceof Transformer) {
+            $method = 'transform';
+        }
 
-        Etl::set('path', __DIR__ . '/data');
+        if ($step instanceof Loader) {
+            $method = 'load';
+        }
 
-        Etl::addConnection([
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-        ]);
+        $step->initialize();
 
-        Etl::addConnection([
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-        ], 'secondary');
-    }
+        foreach ($data as $row) {
+            $step->$method($row);
+        }
 
-    protected function createUsersTable($connection, $timestamps = false)
-    {
-        DB::connection($connection)->exec('DROP TABLE IF EXISTS users');
-
-        $statement = $timestamps
-            ? 'CREATE TABLE users (id INTEGER, name VARCHAR(255), email VARCHAR(255), created_at TIMESTAMP, updated_at TIMESTAMP, deleted_at TIMESTAMP)'
-            : 'CREATE TABLE users (id INTEGER, name VARCHAR(255), email VARCHAR(255))';
-
-        DB::connection($connection)->exec($statement);
+        $step->finalize();
     }
 }

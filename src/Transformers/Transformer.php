@@ -2,12 +2,16 @@
 
 namespace Marquine\Etl\Transformers;
 
-abstract class Transformer
+use Marquine\Etl\Row;
+use Marquine\Etl\Step;
+
+abstract class Transformer extends Step
 {
     /**
-     * Get the transformer handler.
+     * Transform the given row.
      *
-     * @return callable
+     * @param  \Marquine\Etl\Row  $row
+     * @return void
      */
-    abstract public function handler();
+    abstract public function transform(Row $row);
 }

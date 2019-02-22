@@ -2,6 +2,8 @@
 
 namespace Marquine\Etl\Extractors;
 
+use Marquine\Etl\Row;
+
 class FixedWidth extends Extractor
 {
     /**
@@ -9,22 +11,28 @@ class FixedWidth extends Extractor
      *
      * @var array
      */
-    public $columns;
+    protected $columns;
 
     /**
-     * Extract data from the given source.
+     * Properties that can be set via the options method.
      *
-     * @param  string  $source
+     * @var array
+     */
+    protected $availableOptions = [
+        'columns'
+    ];
+
+    /**
+     * Extract data from the input.
+     *
      * @return \Generator
      */
-    public function extract($source)
+    public function extract()
     {
-        $source = $this->validateSourceFile($source);
-
-        $handle = fopen($source, 'r');
+        $handle = fopen($this->input, 'r');
 
         while ($row = fgets($handle)) {
-            yield $this->makeRow($row);
+            yield new Row($this->makeRow($row));
         }
 
         fclose($handle);

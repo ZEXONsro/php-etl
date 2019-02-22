@@ -3,91 +3,52 @@
 namespace Tests\Extractors;
 
 use Tests\TestCase;
+use Marquine\Etl\Row;
 use Marquine\Etl\Extractors\Query;
-use Marquine\Etl\Database\Manager as DB;
 
 class QueryTest extends TestCase
 {
-    protected $items = [
-        ['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email.com'],
-        ['id' => '2', 'name' => 'Jane Doe', 'email' => 'janedoe@email.com'],
-    ];
-
     /** @test */
-    public function extract_data_from_a_database_using_a_custom_query()
+    public function default_options()
     {
-        $this->createUsersTable('default');
+        $statement = $this->createMock('PDOStatement');
+        $statement->expects($this->once())->method('execute')->with([]);
+        $statement->expects($this->exactly(3))->method('fetch')->will($this->onConsecutiveCalls(['row1'], ['row2'], null));
 
-        DB::connection('default')->exec("insert into users values (1, 'John Doe', 'johndoe@email.com')");
-        DB::connection('default')->exec("insert into users values (2, 'Jane Doe', 'janedoe@email.com')");
+        $connection = $this->createMock('PDO');
+        $connection->expects($this->once())->method('prepare')->with('select query')->willReturn($statement);
 
-        $query = 'SELECT * FROM users';
+        $manager = $this->createMock('Marquine\Etl\Database\Manager');
+        $manager->expects($this->once())->method('pdo')->with('default')->willReturn($connection);
 
-        $extractor = new Query;
+        $extractor = new Query($manager);
 
-        $results = $extractor->extract($query);
+        $extractor->input('select query');
 
-        $this->assertEquals($this->items, iterator_to_array($results));
+        $this->assertEquals([new Row(['row1']), new Row(['row2'])], iterator_to_array($extractor->extract()));
     }
 
     /** @test */
-    public function extract_data_from_a_database_using_a_custom_query_and_bindings()
+    public function custom_connection_and_bindings()
     {
-        $this->createUsersTable('default');
+        $statement = $this->createMock('PDOStatement');
+        $statement->expects($this->once())->method('execute')->with('bindings');
+        $statement->expects($this->exactly(3))->method('fetch')->will($this->onConsecutiveCalls(['row1'], ['row2'], null));
 
-        DB::connection('default')->exec("insert into users values (1, 'John Doe', 'johndoe@email.com')");
-        DB::connection('default')->exec("insert into users values (2, 'Jane Doe', 'janedoe@email.com')");
+        $connection = $this->createMock('PDO');
+        $connection->expects($this->once())->method('prepare')->with('select query')->willReturn($statement);
 
-        $query = 'SELECT * FROM users WHERE id = ?';
+        $manager = $this->createMock('Marquine\Etl\Database\Manager');
+        $manager->expects($this->once())->method('pdo')->with('connection')->willReturn($connection);
 
-        $extractor = new Query;
+        $extractor = new Query($manager);
 
-        $extractor->bindings = [1];
+        $extractor->input('select query');
+        $extractor->options([
+            'connection' => 'connection',
+            'bindings' => 'bindings',
+        ]);
 
-        $results = $extractor->extract($query);
-
-        $expected = [['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email.com']];
-
-        $this->assertEquals($expected, iterator_to_array($results));
-    }
-
-    /** @test */
-    public function extract_data_from_a_database_using_a_custom_query_and_named_bindings()
-    {
-        $this->createUsersTable('default');
-
-        DB::connection('default')->exec("insert into users values (1, 'John Doe', 'johndoe@email.com')");
-        DB::connection('default')->exec("insert into users values (2, 'Jane Doe', 'janedoe@email.com')");
-
-        $query = 'SELECT * FROM users WHERE id = :id AND name = :name';
-
-        $extractor = new Query;
-
-        $extractor->bindings = ['name' => 'John Doe', 'id' => 1];
-
-        $results = $extractor->extract($query);
-
-        $expected = [['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email.com']];
-
-        $this->assertEquals($expected, iterator_to_array($results));
-    }
-
-    /** @test */
-    public function extract_data_from_a_database_using_a_custom_query_and_connection()
-    {
-        $this->createUsersTable('secondary');
-
-        DB::connection('secondary')->exec("insert into users values (1, 'John Doe', 'johndoe@email.com')");
-        DB::connection('secondary')->exec("insert into users values (2, 'Jane Doe', 'janedoe@email.com')");
-
-        $query = 'SELECT * FROM users';
-
-        $extractor = new Query;
-
-        $extractor->connection = 'secondary';
-
-        $results = $extractor->extract($query);
-
-        $this->assertEquals($this->items, iterator_to_array($results));
+        $this->assertEquals([new Row(['row1']), new Row(['row2'])], iterator_to_array($extractor->extract()));
     }
 }

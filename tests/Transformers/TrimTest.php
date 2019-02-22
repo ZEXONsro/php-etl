@@ -3,95 +3,113 @@
 namespace Tests\Transformers;
 
 use Tests\TestCase;
+use Marquine\Etl\Row;
 use Marquine\Etl\Transformers\Trim;
 
 class TrimTest extends TestCase
 {
-    protected $items = [
-        ['id' => ' 1', 'name' => 'John Doe  ', 'email' => ' johndoe@email.com '],
-        ['id' => '2 ', 'name' => '  Jane Doe', 'email' => '  janedoe@email.com  '],
-    ];
-
-    /** @test */
-    public function trim_all_columns()
+    protected function setUp()
     {
-        $transformer = new Trim;
+        parent::setUp();
 
-        $results = array_map($transformer->handler(), $this->items);
-
-        $expected = [
-            ['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email.com'],
-            ['id' => '2', 'name' => 'Jane Doe', 'email' => 'janedoe@email.com'],
+        $this->data = [
+            new Row(['id' => ' 1', 'name' => 'John Doe  ', 'email' => ' johndoe@email.com ']),
+            new Row(['id' => '2 ', 'name' => '  Jane Doe', 'email' => '  janedoe@email.com  ']),
         ];
-
-        $this->assertEquals($expected, $results);
     }
 
     /** @test */
-    public function trim_specific_columns()
+    public function default_options()
     {
-        $transformer = new Trim;
-
-        $transformer->columns = ['id', 'name'];
-
-        $results = array_map($transformer->handler(), $this->items);
-
         $expected = [
-            ['id' => '1', 'name' => 'John Doe', 'email' => ' johndoe@email.com '],
-            ['id' => '2', 'name' => 'Jane Doe', 'email' => '  janedoe@email.com  '],
+            new Row(['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => '2', 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
         ];
 
-        $this->assertEquals($expected, $results);
+        $transformer = new Trim;
+
+        $this->execute($transformer, $this->data);
+
+        $this->assertEquals($expected, $this->data);
+    }
+
+    /** @test */
+    public function custom_columns()
+    {
+        $expected = [
+            new Row(['id' => '1', 'name' => 'John Doe', 'email' => ' johndoe@email.com ']),
+            new Row(['id' => '2', 'name' => 'Jane Doe', 'email' => '  janedoe@email.com  ']),
+        ];
+
+        $transformer = new Trim;
+
+        $transformer->options(['columns' => ['id', 'name']]);
+
+        $this->execute($transformer, $this->data);
+
+        $this->assertEquals($expected, $this->data);
     }
 
     /** @test */
     public function trim_right()
     {
-        $transformer = new Trim;
-
-        $transformer->type = 'right';
-
-        $results = array_map($transformer->handler(), $this->items);
-
         $expected = [
-            ['id' => ' 1', 'name' => 'John Doe', 'email' => ' johndoe@email.com'],
-            ['id' => '2', 'name' => '  Jane Doe', 'email' => '  janedoe@email.com'],
+            new Row(['id' => ' 1', 'name' => 'John Doe', 'email' => ' johndoe@email.com']),
+            new Row(['id' => '2', 'name' => '  Jane Doe', 'email' => '  janedoe@email.com']),
         ];
 
-        $this->assertEquals($expected, $results);
+        $transformer = new Trim;
+
+        $transformer->options(['type' => 'right']);
+
+        $this->execute($transformer, $this->data);
+
+        $this->assertEquals($expected, $this->data);
     }
 
     /** @test */
     public function trim_left()
     {
-        $transformer = new Trim;
-
-        $transformer->type = 'left';
-
-        $results = array_map($transformer->handler(), $this->items);
-
         $expected = [
-            ['id' => '1', 'name' => 'John Doe  ', 'email' => 'johndoe@email.com '],
-            ['id' => '2 ', 'name' => 'Jane Doe', 'email' => 'janedoe@email.com  '],
+            new Row(['id' => '1', 'name' => 'John Doe  ', 'email' => 'johndoe@email.com ']),
+            new Row(['id' => '2 ', 'name' => 'Jane Doe', 'email' => 'janedoe@email.com  ']),
         ];
 
-        $this->assertEquals($expected, $results);
+        $transformer = new Trim;
+
+        $transformer->options(['type' => 'left']);
+
+        $this->execute($transformer, $this->data);
+
+        $this->assertEquals($expected, $this->data);
     }
 
     /** @test */
-    public function trim_with_custom_character_mask()
+    public function custom_character_mask()
+    {
+        $expected = [
+            new Row(['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email']),
+            new Row(['id' => '2', 'name' => 'Jane Doe', 'email' => 'janedoe@email']),
+        ];
+
+        $transformer = new Trim;
+
+        $transformer->options(['mask' => ' cmo.']);
+
+        $this->execute($transformer, $this->data);
+
+        $this->assertEquals($expected, $this->data);
+    }
+
+    /** @test */
+    public function throws_an_exception_for_unsupported_trim_type()
     {
         $transformer = new Trim;
 
-        $transformer->mask = ' cmo.';
+        $transformer->options(['type' => 'invalid']);
 
-        $results = array_map($transformer->handler(), $this->items);
+        $this->expectException('InvalidArgumentException');
 
-        $expected = [
-            ['id' => '1', 'name' => 'John Doe', 'email' => 'johndoe@email'],
-            ['id' => '2', 'name' => 'Jane Doe', 'email' => 'janedoe@email'],
-        ];
-
-        $this->assertEquals($expected, $results);
+        $this->execute($transformer, $this->data);
     }
 }

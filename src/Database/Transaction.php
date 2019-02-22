@@ -2,191 +2,144 @@
 
 namespace Marquine\Etl\Database;
 
+use PDO;
 use Exception;
-use InvalidArgumentException;
 
 class Transaction
 {
     /**
-    * The database connection.
-    *
-    * @var \Marquine\Etl\Database\Connection
-    */
-    protected $connection;
-
-    /**
-     * The transaction data.
+     * The database connection.
      *
-     * @var mixed
+     * @var \PDO
      */
-    protected $data;
+    protected $pdo;
 
     /**
-    * The transaction mode.
-    *
-    * @var string|int
-    */
-    protected $mode;
+     * Current transaction count.
+     *
+     * @var int
+     */
+    protected $count = 0;
 
     /**
-    * Create a new Transaction instance.
-    *
-    * @param  \Marquine\Etl\Database\Connection  $connection
-    * @return void
-    */
-    public function __construct(Connection $connection)
+     * Indicates if a transaction is open.
+     *
+     * @var bool
+     */
+    protected $open = false;
+
+    /**
+     * Commit size.
+     *
+     * @var int
+     */
+    protected $size;
+
+    /**
+     * Create a new Transaction instance.
+     *
+     * @param  \PDO  $pdo
+     * @return void
+     */
+    public function __construct(PDO $pdo)
     {
-        $this->connection = $connection;
+        $this->pdo = $pdo;
     }
 
     /**
-     * Get a transaction instance for the given connection.
+     * Set the commit size.
      *
-     * @param  string  $connection
-     * @return static
-     */
-    public static function connection($connection)
-    {
-        return new static(Manager::connection($connection));
-    }
-
-    /**
-     * Set the transaction mode.
-     *
-     * @param  string|int  $mode
+     * @param  int  $size
      * @return $this
      */
-    public function mode($mode)
+    public function size($size)
     {
-        $this->mode = $mode;
+        $this->size = $size;
 
         return $this;
     }
 
     /**
-     * Set the transactoin data.
+     * Run the given callback inside a transaction.
      *
-     * @param  mixed  $data
-     * @return $this
-     */
-    public function data($data)
-    {
-        $this->data = $data;
-
-        return $this;
-    }
-
-    /**
-     * Run the transaction.
-     *
-     * @param  callable  $callback
-     * @return array
-     *
-     * @throws \InvalidArgumentException
+     * @param  callbale  $callback
+     * @return void
      */
     public function run($callback)
     {
-        if ($this->mode > 0) {
-            return $this->multiple($callback);
+        $this->count++;
+
+        if ($this->shouldBeginTransaction()) {
+            $this->beginTransaction();
         }
 
-        if ($this->mode == 'single') {
-            return $this->single($callback);
+        try {
+            call_user_func($callback);
+        } catch (Exception $exception) {
+            $this->pdo->rollBack();
+
+            throw $exception;
         }
 
-        if ($this->mode == 'none') {
-            return $this->none($callback);
+        if ($this->shouldCommit()) {
+            $this->commit();
         }
-
-        throw new InvalidArgumentException('The specified transaction mode is not valid.');
     }
 
     /**
-    * Execute queries in multiple transactions.
-    *
-    * @param  callable  $callback
-    * @return array
-    */
-    protected function multiple($callback)
+     * Check if it should begin a new transaction.
+     *
+     * @return bool
+     */
+    protected function shouldBeginTransaction()
     {
-        $count = 0;
-
-        $results = [];
-
-        foreach ($this->data as $row) {
-            if ($count % $this->mode == 0) {
-                $this->connection->beginTransaction();
-            }
-
-            try {
-                if ($result = $callback($row)) {
-                    $results[] = $result;
-                }
-            } catch (Exception $e) {
-                $this->connection->rollBack();
-
-                throw $e;
-            }
-
-            if ($count % $this->mode == $this->mode - 1) {
-                $this->connection->commit();
-            }
-
-            $count++;
-        }
-
-        if ($count % $this->mode != 0) {
-            $this->connection->commit();
-        }
-
-        return $results;
+        return ! $this->open && (empty($this->size) || $this->count === 1);
     }
 
     /**
-    * Execute queries in a single transaction.
-    *
-    * @param  callable  $callback
-    * @return array
-    */
-    protected function single($callback)
+     * Check if it should commit a transaction.
+     *
+     * @return bool
+     */
+    protected function shouldCommit()
     {
-        $results = [];
-
-        $this->connection->beginTransaction();
-
-        foreach ($this->data as $row) {
-            try {
-                if ($result = $callback($row)) {
-                    $results[] = $result;
-                }
-            } catch (Exception $e) {
-                $this->connection->rollBack();
-
-                throw $e;
-            }
-        }
-
-        $this->connection->commit();
-
-        return $results;
+        return $this->open && ($this->count === $this->size);
     }
 
     /**
-    * Execute queries with no transaction.
-    *
-    * @param  callable  $callback
-    * @return array
-    */
-    protected function none($callback)
+     * Begin a database transaction.
+     *
+     * @return void
+     */
+    protected function beginTransaction()
     {
-        $results = [];
+        $this->open = true;
 
-        foreach ($this->data as $row) {
-            if ($result = $callback($row)) {
-                $results[] = $result;
-            }
+        $this->pdo->beginTransaction();
+    }
+
+    /**
+     * Commit a database transaction.
+     *
+     * @return void
+     */
+    protected function commit()
+    {
+        $this->open = false;
+        $this->count = 0;
+
+        $this->pdo->commit();
+    }
+
+    /**
+     * Commit an open transaction.
+     *
+     * @return void
+     */
+    public function close()
+    {
+        if ($this->open) {
+            $this->commit();
         }
-
-        return $results;
     }
 }

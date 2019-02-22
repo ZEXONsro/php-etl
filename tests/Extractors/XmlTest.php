@@ -3,42 +3,48 @@
 namespace Tests\Extractors;
 
 use Tests\TestCase;
+use Marquine\Etl\Row;
 use Marquine\Etl\Extractors\Xml;
 
 class XmlTest extends TestCase
 {
-    private $expected = [
-        ['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com'],
-        ['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com'],
-    ];
-
     /** @test */
-    public function extracts_data_from_a_xml_file()
+    public function custom_loop_path()
     {
+        $expected = [
+            new Row(['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
+        ];
+
         $extractor = new Xml;
 
-        $extractor->loop = '/users/user';
+        $extractor->input(__DIR__ . '/../data/xml1.xml');
+        $extractor->options(['loop' => '/users/user']);
 
-        $results = $extractor->extract('xml1.xml');
 
-        $this->assertEquals($this->expected, iterator_to_array($results));
+        $this->assertEquals($expected, iterator_to_array($extractor->extract()));
     }
 
     /** @test */
-    public function extracts_data_from_a_xml_file_with_custom_columns_path()
+    public function custom_fields_within_the_loop_path()
     {
-        $extractor = new Xml;
-
-        $extractor->loop = '/users/user';
-
-        $extractor->columns = [
-            'id' => 'id/value',
-            'name' => 'name/value',
-            'email' => 'email/value'
+        $expected = [
+            new Row(['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
         ];
 
-        $results = $extractor->extract('xml2.xml');
+        $extractor = new Xml;
 
-        $this->assertEquals($this->expected, iterator_to_array($results));
+        $extractor->input(__DIR__ . '/../data/xml2.xml');
+        $extractor->options([
+            'loop' => '/users/user',
+            'columns' => [
+                'id' => '/@id',
+                'name' => '/profile/name',
+                'email' => '/profile/email/@value',
+            ],
+        ]);
+
+        $this->assertEquals($expected, iterator_to_array($extractor->extract()));
     }
 }

@@ -3,38 +3,43 @@
 namespace Tests\Extractors;
 
 use Tests\TestCase;
+use Marquine\Etl\Row;
 use Marquine\Etl\Extractors\Json;
 
 class JsonTest extends TestCase
 {
-    private $expected = [
-        ['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com'],
-        ['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com'],
-    ];
-
     /** @test */
-    public function extracts_data_from_a_json_file()
+    public function default_options()
     {
+        $expected = [
+            new Row(['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
+        ];
+
         $extractor = new Json;
 
-        $results = $extractor->extract('json1.json');
+        $extractor->input(__DIR__.'/../data/json1.json');
 
-        $this->assertEquals($this->expected, iterator_to_array($results));
+        $this->assertEquals($expected, iterator_to_array($extractor->extract()));
     }
 
     /** @test */
-    public function extracts_data_from_a_json_file_with_custom_attributes_path()
+    public function custom_columns_json_path()
     {
-        $extractor = new Json;
-
-        $extractor->columns = [
-            'id' => '$..bindings[*].id.value',
-            'name' => '$..bindings[*].name.value',
-            'email' => '$..bindings[*].email.value'
+        $expected = [
+            new Row(['id' => 1, 'name' => 'John Doe', 'email' => 'johndoe@email.com']),
+            new Row(['id' => 2, 'name' => 'Jane Doe', 'email' => 'janedoe@email.com']),
         ];
 
-        $results = $extractor->extract('json2.json');
+        $extractor = new Json;
 
-        $this->assertEquals($this->expected, iterator_to_array($results));
+        $extractor->input(__DIR__.'/../data/json2.json');
+        $extractor->options(['columns' => [
+            'id' => '$..bindings[*].id.value',
+            'name' => '$..bindings[*].name.value',
+            'email' => '$..bindings[*].email.value',
+        ]]);
+
+        $this->assertEquals($expected, iterator_to_array($extractor->extract()));
     }
 }

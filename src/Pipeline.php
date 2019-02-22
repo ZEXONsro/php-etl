@@ -2,72 +2,225 @@
 
 namespace Marquine\Etl;
 
-use Generator;
+use Iterator;
+use Marquine\Etl\Loaders\Loader;
+use Marquine\Etl\Extractors\Extractor;
+use Marquine\Etl\Transformers\Transformer;
 
-class Pipeline
+class Pipeline implements Iterator
 {
     /**
-     * The pipeline data generator.
+     * The pipeline data flow.
      *
      * @var \Generator
      */
-    protected $generator;
+    protected $flow;
 
     /**
-     * The array of transformers.
+     * The maximum number of rows.
+     *
+     * @var int
+     */
+    protected $limit;
+
+    /**
+     * The number of rows to skip.
+     *
+     * @var int
+     */
+    protected $skip;
+
+    /**
+     * The iteration key.
+     *
+     * @var int
+     */
+    protected $key;
+
+    /**
+     * The current iteration row.
+     *
+     * @var \Marquine\Etl\Row
+     */
+    protected $current;
+
+    /**
+     * The etl extractor.
+     *
+     * @var \Marquine\Etl\Extractors\Extractor
+     */
+    protected $extractor;
+
+    /**
+     * The array of steps for the pipeline.
      *
      * @var array
      */
-    protected $transformers = [];
+    protected $steps = [];
 
     /**
-     * Make a new Pipeline instance.
+     * Set the pipeline extractor.
      *
-     * @param  \Generator  $generator
+     * @param  \Marquine\Etl\Extractors\Extractor  $extractor
      * @return void
      */
-    public function __construct(Generator $generator)
+    public function extractor(Extractor $extractor)
     {
-        $this->generator = $generator;
+        $this->extractor = $extractor;
     }
 
     /**
-     * Pipe a transformer.
+     * Add a step to the pipeline.
      *
-     * @param  callable  $transformer
-     * @return $this
+     * @param  \Marquine\EtlStep  $step
+     * @return void
      */
-    public function pipe(callable $transformer)
+    public function pipe(Step $step)
     {
-        $this->transformers[] = $transformer;
-
-        return $this;
+        $this->steps[] = $step;
     }
 
     /**
-     * Get the pipeline data generator.
+     * Set the row limit.
      *
-     * @return \Generator
+     * @param  int  $limit
+     * @return void
      */
-    public function get()
+    public function limit($limit)
     {
-        foreach ($this->generator as $row) {
-            yield $this->transform($row);
+        $this->limit = $limit;
+    }
+
+    /**
+     * Set the number of rows to skip.
+     *
+     * @param  int  $skip
+     * @return void
+     */
+    public function skip($skip)
+    {
+        $this->skip = $skip;
+    }
+
+    /**
+     * Get the current element.
+     *
+     * @return void
+     */
+    public function current()
+    {
+        return $this->current->toArray();
+    }
+
+    /**
+     * Move forward to next element.
+     *
+     * @return void
+     */
+    public function next()
+    {
+        $this->key++;
+        $this->flow->next();
+    }
+
+    /**
+     * Get the key of the current element.
+     *
+     * @return int
+     */
+    public function key()
+    {
+        return $this->key;
+    }
+
+    /**
+     * Checks if current position is valid.
+     *
+     * @return bool
+     */
+    public function valid()
+    {
+        if (! $this->flow->valid() || $this->limitReached()) {
+            $this->finalize();
+
+            return false;
+        }
+
+        $this->current = $this->flow->current();
+
+
+        foreach ($this->steps as $step) {
+            if ($this->current->discarded()) {
+                $this->key--;
+                $this->next();
+
+                return $this->valid();
+            }
+
+            if ($step instanceof Transformer) {
+                $step->transform($this->current);
+            }
+
+            if ($step instanceof Loader) {
+                $step->load($this->current);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Rewind the Iterator to the first element.
+     *
+     * @return void
+     */
+    public function rewind()
+    {
+        $this->initialize();
+
+        $this->key = 0;
+        $this->flow = $this->extractor->extract();
+
+        while ($this->flow->key() < $this->skip && $this->flow->valid()) {
+            $this->flow->next();
         }
     }
 
     /**
-     * Transform the row data.
+     * Check if the row limit was reached.
      *
-     * @param  array  $row
-     * @return array
+     * @return bool
      */
-    protected function transform($row)
+    protected function limitReached()
     {
-        foreach ($this->transformers as $transformer) {
-            $row = $transformer($row);
-        }
+        return $this->limit && $this->key() === $this->limit;
+    }
 
-        return $row;
+    /**
+     * Initialize the steps.
+     *
+     * @return void
+     */
+    protected function initialize()
+    {
+        $this->extractor->initialize();
+
+        foreach ($this->steps as $step) {
+            $step->initialize();
+        }
+    }
+
+    /**
+     * Finalize the steps.
+     *
+     * @return void
+     */
+    protected function finalize()
+    {
+        $this->extractor->finalize();
+
+        foreach ($this->steps as $step) {
+            $step->finalize();
+        }
     }
 }

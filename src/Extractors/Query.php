@@ -2,38 +2,65 @@
 
 namespace Marquine\Etl\Extractors;
 
-use Marquine\Etl\Database\Manager as DB;
+use Marquine\Etl\Row;
+use Marquine\Etl\Database\Manager;
 
 class Query extends Extractor
 {
-    /**
-     * The connection name.
-     *
-     * @var string
-     */
-    public $connection = 'default';
-
     /**
      * Query bindings.
      *
      * @var array
      */
-    public $bindings = [];
+    protected $bindings = [];
 
     /**
-     * Extract data from the given source.
+     * The connection name.
      *
-     * @param  string  $query
+     * @var string
+     */
+    protected $connection = 'default';
+
+    /**
+     * The database manager.
+     *
+     * @var \Marquine\Etl\Database\Manager
+     */
+    protected $db;
+
+    /**
+     * Properties that can be set via the options method.
+     *
+     * @var array
+     */
+    protected $availableOptions = [
+        'bindings', 'connection'
+    ];
+
+    /**
+     * Create a new Query Extractor instance.
+     *
+     * @param  \Marquine\Etl\Database\Manager  $manager
+     * @return void
+     */
+    public function __construct(Manager $manager)
+    {
+        $this->db = $manager;
+    }
+
+    /**
+     * Extract data from the input.
+     *
      * @return \Generator
      */
-    public function extract($query)
+    public function extract()
     {
-        $query = DB::connection($this->connection)->prepare($query);
+        $statement = $this->db->pdo($this->connection)->prepare($this->input);
 
-        $query->execute($this->bindings);
+        $statement->execute($this->bindings);
 
-        while ($row = $query->fetch()) {
-            yield $row;
+        while ($row = $statement->fetch()) {
+            yield new Row($row);
         }
     }
 }

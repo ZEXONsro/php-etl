@@ -2,67 +2,142 @@
 
 namespace Marquine\Etl;
 
+use Marquine\Etl\Loaders\Loader;
+use Marquine\Etl\Extractors\Extractor;
+use Marquine\Etl\Transformers\Transformer;
+
 class Etl
 {
     /**
-     * Global configuration array.
+     * The etl container.
      *
-     * @var array
+     * @var \Marquine\Etl\Container
      */
-    protected static $config = [];
+    protected $container;
 
     /**
-     * Get the specified configuration value.
+     * The etl pipeline.
      *
-     * @param  string  $key
+     * @var \Marquine\Etl\Pipeline
+     */
+    protected $pipeline;
+
+    /**
+     * Create a new Etl instance.
+     *
+     * @param  Container  $container
+     * @param  Pipeline  $pipeline
+     * @return void
+     */
+    public function __construct(Container $container = null, Pipeline $pipeline = null)
+    {
+        $this->container = $container ?? Container::getInstance();
+        $this->pipeline = $pipeline ?? new Pipeline;
+    }
+
+    /**
+     * Get a service from the container.
+     *
+     * @param  string  $name
      * @return mixed
      */
-    public static function get($key)
+    public static function service($name)
     {
-        $value = static::$config;
-
-        foreach (explode('.', $key) as $segment) {
-            $value = isset($value[$segment]) ? $value[$segment] : null;
-        }
-
-        return $value;
+        return Container::getInstance()->make($name);
     }
 
     /**
-     * Set a given configuration value.
+     * Extract.
      *
-     * @param  string  $key
-     * @param  mixed  $value
-     * @return void
+     * @param  string  $extractor
+     * @param  string  $input
+     * @param  array  $options
+     * @return $this
      */
-    public static function set($key, $value)
+    public function extract($extractor, $input, $options = [])
     {
-        $keys = explode('.', $key);
+        $extractor = $this->container->step($extractor, Extractor::class);
 
-        $array = &static::$config;
+        $extractor->input($input)->options($options);
 
-        while (count($keys) > 1) {
-            $key = array_shift($keys);
+        $this->pipeline->extractor($extractor);
 
-            if (! isset($array[$key]) || ! is_array($array[$key])) {
-                $array[$key] = [];
-            }
-
-            $array = &$array[$key];
-        }
-
-        $array[array_shift($keys)] = $value;
+        return $this;
     }
 
     /**
-     * Add a database connection.
+     * Transform.
      *
-     * @param  array  $config
-     * @param  string  $name
+     * @param  string  $transformer
+     * @param  array  $options
+     * @return $this
+     */
+    public function transform($transformer, $options = [])
+    {
+        $transformer = $this->container->step($transformer, Transformer::class);
+
+        $transformer->options($options);
+
+        $this->pipeline->pipe($transformer);
+
+        return $this;
+    }
+
+    /**
+     * Load.
+     *
+     * @param  string  $loader
+     * @param  string  $output
+     * @param  array  $options
+     * @return $this
+     */
+    public function load($loader, $output, $options = [])
+    {
+        $loader = $this->container->step($loader, Loader::class);
+
+        $loader->output($output)->options($options);
+
+        $this->pipeline->pipe($loader);
+
+        return $this;
+    }
+
+    /**
+     * Execute the ETL.
+     *
      * @return void
      */
-    public static function addConnection($config, $name = 'default')
+    public function run()
     {
-        static::set("connections.$name", $config);
+        $this->pipeline->rewind();
+
+        while ($this->pipeline->valid()) {
+            $this->pipeline->next();
+        }
+    }
+
+    /**
+     * Get an array of the resulting ETL data.
+     *
+     * @return array
+     */
+    public function toArray()
+    {
+        return iterator_to_array($this->pipeline);
+    }
+
+    /**
+     * Handle dynamic method calls.
+     *
+     * @param  string  $method
+     * @param  array  $parameters
+     * @return mixed
+     *
+     */
+    public function __call($method, $parameters)
+    {
+        $this->pipeline->$method(...$parameters);
+
+        return $this;
     }
 }

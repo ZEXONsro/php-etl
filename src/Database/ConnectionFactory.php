@@ -10,7 +10,7 @@ class ConnectionFactory
     * Make a new database connection.
     *
     * @param  array  $config
-    * @return \Marquine\Etl\Database\Connection
+    * @return \PDO
     */
     public function make($config)
     {
@@ -18,9 +18,7 @@ class ConnectionFactory
             throw new InvalidArgumentException('A driver must be specified.');
         }
 
-        $pdo = $this->getConnector($config['driver'])->connect($config);
-
-        return new Connection($pdo);
+        return $this->getConnector($config['driver'])->connect($config);
     }
 
     /**
@@ -38,8 +36,8 @@ class ConnectionFactory
                 return new Connectors\MySqlConnector;
             case 'pgsql':
                 return new Connectors\PostgresConnector;
-            case 'mssql':
-                return new Connectors\MsSqlConnector;
+            case 'sqlsrv':
+                return new Connectors\SqlServerConnector;
         }
 
         throw new InvalidArgumentException("Unsupported driver: $driver");

@@ -2,6 +2,9 @@
 
 namespace Marquine\Etl\Transformers;
 
+use Marquine\Etl\Row;
+use InvalidArgumentException;
+
 class Trim extends Transformer
 {
     /**
@@ -9,74 +12,85 @@ class Trim extends Transformer
      *
      * @var array
      */
-    public $columns;
+    protected $columns = [];
 
     /**
      * The trim type.
      *
      * @var string
      */
-    public $type = 'both';
+    protected $type = 'both';
 
     /**
      * The trim mask.
      *
      * @var string
      */
-    public $mask = " \t\n\r\0\x0B";
+    protected $mask = " \t\n\r\0\x0B";
 
     /**
-     * Get the transformer handler.
+     * The trim function.
      *
-     * @return callable
+     * @var string
      */
-    public function handler()
-    {
-        $this->normalizeType();
-
-        return function ($row) {
-            if ($this->columns) {
-                foreach ($this->columns as $column) {
-                    $row[$column] = call_user_func($this->type, $row[$column], $this->mask);
-                }
-            } else {
-                foreach ($row as $column => $value) {
-                    $row[$column] = call_user_func($this->type, $value, $this->mask);
-                }
-            }
-
-            return $row;
-        };
-    }
+    protected $function;
 
     /**
-     * Normalize the trim function name.
+     * Properties that can be set via the options method.
+     *
+     * @var array
+     */
+    protected $availableOptions = [
+        'columns', 'type', 'mask'
+    ];
+
+    /**
+     * Initialize the step.
      *
      * @return void
      */
-    protected function normalizeType()
+    public function initialize()
+    {
+        $this->function = $this->getTrimFunction();
+    }
+
+    /**
+     * Transform the given row.
+     *
+     * @param  \Marquine\Etl\Row  $row
+     * @return void
+     */
+    public function transform(Row $row)
+    {
+        $row->transform($this->columns, function ($column) {
+            return call_user_func($this->function, $column, $this->mask);
+        });
+    }
+
+    /**
+     * Get the trim function name.
+     *
+     * @return string
+     */
+    protected function getTrimFunction()
     {
         switch ($this->type) {
             case 'ltrim':
             case 'start':
             case 'left':
-                $this->type = 'ltrim';
-                break;
+                return 'ltrim';
 
             case 'rtrim':
             case 'end':
             case 'right':
-                $this->type = 'rtrim';
-                break;
+                return 'rtrim';
 
             case 'trim':
             case 'all':
             case 'both':
-                $this->type = 'trim';
-                break;
-
-            default:
-                $this->type = 'trim';
+                return 'trim';
         }
+
+        throw new InvalidArgumentException("The trim type [{$this->type}] is invalid.");
     }
 }
