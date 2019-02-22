@@ -1,4 +1,7 @@
 vendor/
+/.idea
+/.vagrant
+/nbproject
 composer.lock
 .DS_Store
 .php_cs.cache
